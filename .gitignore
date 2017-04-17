@@ -1,0 +1,13 @@
+.aux
+.log
+.png
+.pptx
+.RData
+.ipynb
+.gz
+.jpeg
+.pyc
+.toc
+data/*
+old src/*
+notebooks/*
