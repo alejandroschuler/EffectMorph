@@ -1,3 +1,4 @@
+__precompile__()
 
 module ObsDataStructures
 import Base, Base.getindex
@@ -65,7 +66,7 @@ function ObsData(X::Matrix, W::Vector, Y::Vector; trts=nothing)
 end
 
 function ObsData(X::Matrix, W::Vector{Bool}, Y::Counterfactuals, trts::Dict{Bool,Any})
-    return ObsData(X, W, Y, trts, length(W), sum(W), sum(!W))
+    return ObsData(X, W, Y, trts, length(W), Dict(true=>sum(W), false=>sum(!W)))
 end
 
 function getindex(data::ObsData, index)
