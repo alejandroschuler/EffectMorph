@@ -1,7 +1,7 @@
 __precompile__()
 
 module ObsDataStructures
-import Base, Base.getindex
+import Base: getindex
 export label_treatments, 
        Counterfactuals, ObsData,
        getindex
@@ -44,6 +44,12 @@ function getindex(Y::Counterfactuals, index)
     return Counterfactuals(Dict(true=>Y.treated[true][index],
                                 false=>Y.treated[false][index]),
                            Y.W[index])
+end
+
+function +(F::Counterfactuals, f::Counterfactuals)
+    treated = Dict(t=>F.treated[t]+f.treated[t] for t in (true, false))
+    observed = Dict(t=>F.observed[t]+f.observed[t] for t in (true, false))
+    return Counterfactuals(treated, observed, F.W)
 end
 
 immutable ObsData

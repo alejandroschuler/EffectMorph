@@ -36,11 +36,11 @@ convert(::Type{Node}, x::Leaf) = Node(0, nothing, x, Leaf(nothing,[nothing])) #m
 promote_rule(::Type{Node}, ::Type{Leaf}) = Node # this tells julia to call convert(::node, leaf) on the leaf when this happens
 promote_rule(::Type{Leaf}, ::Type{Node}) = Node
 
-function fit_regression_tree{T<:Float64, U<:Real}(X::Matrix{U}, Y::Vector{T}; minobsinnode=5, maxdepth=-1)
-    if maxdepth < -1
-        error("Unexpected value for maxdepth: $(maxdepth) (expected: maxdepth >= 0, or maxdepth = -1 for infinite depth)")
+function fit_regression_tree{T<:Float64, U<:Real}(X::Matrix{U}, Y::Vector{T}; min_samples_leaf=5, max_depth=-1)
+    if max_depth < -1
+        error("Unexpected value for max_depth: $(max_depth) (expected: max_depth >= 0, or max_depth = -1 for infinite depth)")
     end
-    if length(Y) <= minobsinnode || maxdepth==0
+    if length(Y) <= min_samples_leaf || max_depth==0
         return Leaf(1, mean(Y), Y)
     end
     S = _split_mse(X, Y)
@@ -50,8 +50,8 @@ function fit_regression_tree{T<:Float64, U<:Real}(X::Matrix{U}, Y::Vector{T}; mi
     id, thresh = S
     split = X[:,id] .< thresh
     return Node(id, thresh,
-                fit_regression_tree(X[split,:], Y[split], minobsinnode=minobsinnode, maxdepth=max(maxdepth-1, -1)),
-                fit_regression_tree(X[neg(split),:], Y[neg(split)], minobsinnode=minobsinnode, maxdepth=max(maxdepth-1, -1))
+                fit_regression_tree(X[split,:], Y[split], min_samples_leaf=min_samples_leaf, max_depth=max(max_depth-1, -1)),
+                fit_regression_tree(X[neg(split),:], Y[neg(split)], min_samples_leaf=min_samples_leaf, max_depth=max(max_depth-1, -1))
                 )
 end
 

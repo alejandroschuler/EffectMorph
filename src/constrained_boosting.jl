@@ -21,19 +21,12 @@ using Ipopt
 
 const TF = [true, false]
 
-predict_counterfactuals(estimator, data) = Counterfactuals(predict(const_estimator, data.X), data.W)
-
-function calculate_residuals(data::ObsData, F::Counterfactuals, tr, loss::Loss)
-    Y = data.Y.observed[true][tr]
-    F = F.observed[true][tr]
-    return evaluate(loss, Y, F)
-
-function fit_const_estimators(data::ObsData, loss::Squared, τ::Real)
+function fit_const_pair(data::ObsData, loss::Squared, τ::Real)
     Ȳ = mean(data.Y.observed)
     return Dict(t => Leaf(Ȳ - τ * data.N_treated[t]/data.N) for t in TF)
 end
 
-function fit_const_estimators(data::ObsData, loss::Binomial, τ::Real)
+function fit_const_pair(data::ObsData, loss::Binomial, τ::Real)
     m = Model(solver=IpoptSolver())
     @variable(m, 0 <= πt <= 1)
     @variable(m, 0 <= πf <= 1)
@@ -45,17 +38,39 @@ function fit_const_estimators(data::ObsData, loss::Binomial, τ::Real)
     return Dict(t  => Leaf(log(π[t]/(1-π[t]))) for t in TF)
 end
 
+predict_counterfactuals(estimator_pair, data) = Counterfactuals(predict(estimator_pair, data.X), data.W)
+
+
+function evaluate(loss::Loss, Y::Counterfactuals, F::Counterfactuals; idx=:)
+    return evaluate(loss, Y[idx].observed[true], F[idx].observed[true])
+end
+
+
+function gradient(loss::Loss, Y::Counterfactuals, F::Counterfactuals; idx=:)
+    return Dict(t => gradient(loss, Y[idx].observed[true][Y.W==t], F[idx].observed[true][Y.W==t]) for t in TF)
+end
+
 function constrained_boost(data::ObsData, loss::Loss, τ::Real, n_trees::Int; 
                            max_depth=3, learning_rate=0.1, min_samples_leaf=1,
-                           training_index=nothing)
-    if training_index == nothing
-        training_index = 1:data.N
-    end
+                           tr=:)
+    data_tr = data[tr]
 
     estimators, F, residuals = [], [], []
 
-    const_estimator = fit_const_estimators(data, loss, τ)
-    push!(F, F[end]+predict_counterfactuals(const_estimator, data)) # the full set of predicted counterfactuals, a Vector{Counterfactuals}
-    push!(residuals, calculate_residuals(data, F[end], training_index, loss))
+    const_pair = fit_const_pair(data_tr, loss, τ)
+    push!(estimators, const_pair)
+    push!(F, F[end]+predict_counterfactuals(estimators[end], data)) 
+    push!(residuals, gradient(loss, data.Y, F[end], tr))
+
+    for i in 1:n_trees
+        tree_pair = Dict(t=>fit_regression_tree(data_tr.X[data_tr.W==t], residuals[t], 
+                                                min_samples_leaf=min_samples_leaf, 
+                                                max_depth=max_depth))
+
+        nu = step_search(loss, data, tree_pair)
+
+        push!(F, F[end]+predict_counterfactuals(tree_pair, data)) 
+        push!(residuals, gradient(loss, data.Y, F[end], tr))
+    end
 
 end # module
