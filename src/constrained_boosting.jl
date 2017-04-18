@@ -50,12 +50,28 @@ function gradient(loss::Loss, Y::Counterfactuals, F::Counterfactuals; idx=:)
     return Dict(t => gradient(loss, Y[idx].observed[true][Y.W==t], F[idx].observed[true][Y.W==t]) for t in TF)
 end
 
+
+function step_search(loss::Binomial, data::ObsData, F::Counterfactuals, f::Counterfactuals, tree_pair; tr=:)
+    leaf_index = build_leaf_index(tree_pair, data.X)
+    m = Model(solver=IpoptSolver())
+    @variable(νt[])
+
+function build_leaf_index(tree_pair::Dict{Bool,Node}, X::Matrix)
+    assingments = Dict(t=>leaf_assignments(tree_pair[t], X) for t in TF)
+    leaves = Dict(t=>Set(leaf_assignments(t)) for t in TF)
+    assignment_index = Dict(t=>Dict(l=>find(assingments[t].==l) for l in leaves[t]) for t in TF)
+    #leaves = Set(vcat([ls for (t,ls) in assingments]...))
+    #assignment_index_matrix = [(t,l,find(derp[t].==l)) for t in TF, l in leaves]
+    #assignment_index = Dict((t,l)=>ind for (t,l,ind) in vec(assignment_index_matrix) if length(ind)>0)
+    return assignment_index, length(assignment_index)
+end
+
 function constrained_boost(data::ObsData, loss::Loss, τ::Real, n_trees::Int; 
-                           max_depth=3, learning_rate=0.1, min_samples_leaf=1,
+                           max_depth=3, learning_rate=0.1, min_samples_leaf=1;
                            tr=:)
     data_tr = data[tr]
 
-    estimators, F, residuals = [], [], []
+    estimators, F, residuals = Vector{Node}, Vector{Counterfactuals}, Vector{Vector{Float64}}
 
     const_pair = fit_const_pair(data_tr, loss, τ)
     push!(estimators, const_pair)
@@ -63,13 +79,15 @@ function constrained_boost(data::ObsData, loss::Loss, τ::Real, n_trees::Int;
     push!(residuals, gradient(loss, data.Y, F[end], tr))
 
     for i in 1:n_trees
-        tree_pair = Dict(t=>fit_regression_tree(data_tr.X[data_tr.W==t], residuals[t], 
+        tree_pair = Dict(t=>fit_regression_tree(data_tr.X[data_tr.W.==t,:], residuals[t], 
                                                 min_samples_leaf=min_samples_leaf, 
-                                                max_depth=max_depth))
+                                                max_depth=max_depth) for t in TF)
 
         nu = step_search(loss, data, tree_pair)
+        # integrage nu into the estimators
 
-        push!(F, F[end]+predict_counterfactuals(tree_pair, data)) 
+        push!(estimators, ... )
+        push!(F, F[end]+predict_counterfactuals( ... , data)) 
         push!(residuals, gradient(loss, data.Y, F[end], tr))
     end
 

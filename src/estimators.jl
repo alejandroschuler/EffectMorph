@@ -1,4 +1,4 @@
-# Almost all of this code is a streamlined version of https://github.com/bensadeghi/DecisionTree.jl
+# Adapted from https://github.com/bensadeghi/DecisionTree.jl
 __precompile__()
 
 module Estimators
@@ -6,24 +6,29 @@ import Base: length, convert, promote_rule, show, start, next, done
 export Estimator, Leaf, Node, 
        depth,  
        fit_regression_tree, 
-       predict
+       predict, leaf_assignment
 
 float(x) = map(Float64, x)
 neg(arr) = map(!, arr) # `.!arr` is invalid in 0.5, and `!arr` triggers a warning in 0.6.
 const NO_BEST=(0,0)  
 
+# converts a boolean vector into an integer by summing the appropriate powers of 2
+boolvec2int(v::Vector{Bool}) = sum(b*v for (b,v) in zip(2.^(0:(length(v)-1)), v))
+
 abstract Estimator
 
 immutable Leaf <: Estimator # MIGHT WANT TO NOT HAVE THIS BE IMMUTABLE SO VALUES CAN BE CHANGED (BY MULTIPLIER)
-    id::Int
+    id::Integer
     value::Real
 end
     length(leaf::Leaf) = 1
     depth(leaf::Leaf) = 0
 
-Leaf(value) = Leaf(0,value)
+Leaf(id::Vector{Bool}, value::Real) = Leaf(boolvec2int(id), value)
+Leaf(value::Real) = Leaf(0,value)
 
 immutable Node <: Estimator
+    node_id::Integer
     featid::Integer
     featval::Any
     left::Union{Leaf,Node}
@@ -32,26 +37,33 @@ end
     length(tree::Node) = length(tree.left) + length(tree.right)
     depth(tree::Node) = 1 + max(depth(tree.left), depth(tree.right))
 
+function Node(id::Vector{Bool}, featid::Integer, featval::Any, left::Union{Leaf,Node}, right::Union{Leaf,Node})
+    return Node(boolvec2int(id), featid, featval, left, right)
+end
+
 convert(::Type{Node}, x::Leaf) = Node(0, nothing, x, Leaf(nothing,[nothing])) #makes a node with that leaf as it's left node
 promote_rule(::Type{Node}, ::Type{Leaf}) = Node # this tells julia to call convert(::node, leaf) on the leaf when this happens
 promote_rule(::Type{Leaf}, ::Type{Node}) = Node
 
-function fit_regression_tree{T<:Float64, U<:Real}(X::Matrix{U}, Y::Vector{T}; min_samples_leaf=5, max_depth=-1)
+function fit_regression_tree{T<:Float64, U<:Real}(X::Matrix{U}, Y::Vector{T}; min_samples_leaf=5, max_depth=-1, node_id::Vector{Bool}=[true])
     if max_depth < -1
         error("Unexpected value for max_depth: $(max_depth) (expected: max_depth >= 0, or max_depth = -1 for infinite depth)")
     end
     if length(Y) <= min_samples_leaf || max_depth==0
-        return Leaf(1, mean(Y), Y)
+        return Leaf(node_id, mean(Y))
+
     end
     S = _split_mse(X, Y)
     if S == NO_BEST
-        return Leaf(mean(Y), Y)
+        return Leaf(node_id, mean(Y))
     end
-    id, thresh = S
-    split = X[:,id] .< thresh
-    return Node(id, thresh,
-                fit_regression_tree(X[split,:], Y[split], min_samples_leaf=min_samples_leaf, max_depth=max(max_depth-1, -1)),
-                fit_regression_tree(X[neg(split),:], Y[neg(split)], min_samples_leaf=min_samples_leaf, max_depth=max(max_depth-1, -1))
+    feat_id, thresh = S
+    split = X[:,feat_id] .< thresh
+    return Node(node_id, feat_id, thresh,
+                fit_regression_tree(X[split,:], Y[split], 
+                    min_samples_leaf=min_samples_leaf, max_depth=max(max_depth-1, -1), node_id=vcat(true,node_id)),
+                fit_regression_tree(X[neg(split),:], Y[neg(split)], 
+                    min_samples_leaf=min_samples_leaf, max_depth=max(max_depth-1, -1), node_id=vcat(false,node_id))
                 )
 end
 
@@ -154,6 +166,35 @@ end
 
 function predict(estimator_dict::Dict, X::Matrix)
     return Dict(k=>predict(v,X) for (k,v) in estimator_dict)
+end
+
+leaf_assignment(leaf::Leaf, feature::Vector) = leaf.id
+
+function leaf_assignment(tree::Node, X::Vector)
+    if tree.featval == nothing
+        return leaf_assignment(tree.left, X)
+    elseif X[tree.featid] < tree.featval
+        return leaf_assignment(tree.left, X)
+    else
+        return leaf_assignment(tree.right, X)
+    end
+end
+
+function leaf_assignment(tree::Union{Leaf,Node}, X::Matrix)
+    N = size(X,1)
+    assignments = Array{Any}(N)
+    for i in 1:N
+        assignments[i] = leaf_assignment(tree, X[i,:])
+    end
+    if typeof(assignments[1]) <: Float64
+        return float(assignments)
+    else
+        return assignments
+    end
+end
+
+function leaf_assignment(estimator_dict::Dict, X::Matrix)
+    return Dict(k=>leaf_assignment(v,X) for (k,v) in estimator_dict)
 end
 
 end #module
