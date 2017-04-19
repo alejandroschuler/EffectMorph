@@ -2,7 +2,6 @@ __precompile__()
 
 module Losses
 
-
 export Loss, Squared, Binomial,
        evaluate, grad, effect
 

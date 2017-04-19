@@ -6,7 +6,7 @@ module CausalEffectMorph
 
 export ObsData, 
        Squared, Binomial,
-       constrained_boost
+       constrained_boost, cross_validate
 
 include_dependency("data_structures.jl")
 include_dependency("losses.jl")
@@ -78,7 +78,7 @@ function step_search(loss::Squared, data::ObsData, F::Counterfactuals, tree_pair
     m = Model(solver=IpoptSolver())
     @variable(m, ν[1:L])
     @constraint(m, sum(constraint_coefs[i]*ν[i] for i in 1:L) == 0)
-    @objective(m, Min, sum(ν[i]^2*squares[i] + coefs[i]*ν[i] for i in 1:L))
+    @objective(m, Min, sum(ν[i]^2*squares[i] - coefs[i]*ν[i] for i in 1:L))
     status = solve(m)
 
     # TODO: catch cases where this doesn't exit with solved status... most likely because it's already super overfit and nothing more to learn
@@ -120,6 +120,23 @@ function constrained_boost(data::ObsData, loss::Loss, τ::Float64, n_trees::Int;
         residuals = obs_gradient(loss, data.Y, F[end], idx=tr)
     end
     return F
+end
+
+import MLBase.Kfold
+
+function cross_validate(data::ObsData, loss::Loss, τ::Float64, n_trees::Int;
+                           max_depth=3, learning_rate=0.1, min_samples_leaf=1,
+                           nfolds=5)
+    training_error, test_error = Vector{Vector{Float64}}(0), Vector{Vector{Float64}}(0)
+    for tr in Kfold(data.N, nfolds)
+        te = [i for i in 1:data.N if i ∉ tr]
+        F = constrained_boost(data::ObsData, loss::Loss, τ::Float64, n_trees::Int; 
+                           max_depth=max_depth, learning_rate=learning_rate, min_samples_leaf=min_samples_leaf,
+                           tr=tr)
+        push!(training_error, [sum(evaluate(loss, data.Y.Y[tr], F[n].observed[true][tr])) for n in 1:n_trees+1])
+        push!(test_error, [sum(evaluate(loss, data.Y.Y[te], F[n].observed[true][te])) for n in 1:n_trees+1])
+    end
+    return training_error, test_error
 end
 
 end # module
