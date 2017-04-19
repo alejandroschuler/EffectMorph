@@ -1,10 +1,10 @@
 __precompile__()
 
 module ObsDataStructures
-import Base: getindex
+import Base: getindex, +
 export label_treatments, 
        Counterfactuals, Outcome, Covariates, ObsData,
-       getindex, Γ
+       getindex, Γ, +
 
 function label_treatments(W::Vector)
     treatment_levels = sort!([w for w in Set(W)])

@@ -1,8 +1,12 @@
 # note that when using the binomial loss, the treatment effect must be between -1 and 1
 
-__precompile()__
+__precompile__()
 
 module CausalEffectMorph
+
+export ObsData, 
+       Squared, Binomial,
+       constrained_boost
 
 include_dependency("data_structures.jl")
 include_dependency("losses.jl")
@@ -23,11 +27,11 @@ using Ipopt
 const TF = [true, false]
 
 function fit_const_pair(data::ObsData, loss::Squared, τ::Real)
-    Ȳ = mean(data.Y.observed[true])
-    return Dict(t => Leaf(Ȳ +(t*1) * τ * data.N_treated[t]/data.N) for t in TF)
+    Ȳ = mean(data.Y.Y)
+    return Dict(t => Leaf(Ȳ +(2*t-1) * τ * data.N_treated[t]/data.N) for t in TF)
 end
 
-function fit_const_pair(data::ObsData, loss::Binomial, τ::Real)
+function fit_const_pair(data::ObsData, loss::Binomial, τ::Float64)
     m = Model(solver=IpoptSolver())
     @variable(m, 0 <= πt <= 1)
     @variable(m, 0 <= πf <= 1)
@@ -77,11 +81,13 @@ function step_search(loss::Squared, data::ObsData, F::Counterfactuals, tree_pair
     @objective(m, Min, sum(ν[i]^2*squares[i] + coefs[i]*ν[i] for i in 1:L))
     status = solve(m)
 
+    # TODO: catch cases where this doesn't exit with solved status... most likely because it's already super overfit and nothing more to learn
+
     ν_dict = Dict(true=>Dict(), false=>Dict())
     for (νi, (t,l)) in zip(getvalue(ν), keys(idx))
         ν_dict[t][l] = νi
     end
-                            
+                         
     return ν_dict
 end
 
@@ -89,29 +95,31 @@ function step_search(loss::Binomial, data::ObsData, F::Counterfactuals, f::Count
     return nothing # TO DO
 end
 
+function predict_counterfactuals(tree_pair, X, ν, ϵ)
+    return Counterfactuals(Dict(t=>[ϵ*ν[t][li] for li in assign_leaves(tree_pair[t], X.X)] for t in TF), X.W)
+end
+
 function constrained_boost(data::ObsData, loss::Loss, τ::Float64, n_trees::Int; 
-                           max_depth=3, learning_rate=0.1, min_samples_leaf=1;
+                           max_depth=3, learning_rate=0.1, min_samples_leaf=1,
                            tr=:)
     data_tr = data[tr]
 
-    estimators, F, residuals = Vector{Node}, Vector{Counterfactuals}, Vector{Vector{Float64}}
+    F = Vector{Counterfactuals}(0)
 
     const_pair = fit_const_pair(data_tr, loss, τ)
-    push!(estimators, const_pair)
-    push!(F, F[end]+predict_counterfactuals(estimators[end], data)) 
-    push!(residuals, obs_gradient(loss, data.Y, F[end], idx=tr))
+    push!(F, predict_counterfactuals(const_pair, data)) 
+    residuals = obs_gradient(loss, data.Y, F[end], idx=tr)
 
     for i in 1:n_trees
+        print(i)
         tree_pair = Dict(t=>fit_regression_tree(Γ(data.X[tr],t=t) , residuals[t], 
                                                         min_samples_leaf=min_samples_leaf, 
                                                         max_depth=max_depth) for t in TF);
-
-        nu = step_search(loss, data, tree_pair)
-        # integrage nu into the estimators
-
-        push!(estimators, ... )
-        push!(F, F[end]+predict_counterfactuals( ... , data)) 
-        push!(residuals, obs_gradient(loss, data.Y, F[end], tr))
+        ν = step_search(loss, data, F[end], tree_pair, tr=tr)
+        push!(F, F[end]+predict_counterfactuals(tree_pair, data.X, ν, learning_rate)) 
+        residuals = obs_gradient(loss, data.Y, F[end], idx=tr)
     end
+    return F
+end
 
 end # module
