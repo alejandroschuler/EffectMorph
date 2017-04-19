@@ -3,8 +3,8 @@ __precompile__()
 module ObsDataStructures
 import Base: getindex
 export label_treatments, 
-       Counterfactuals, ObsData,
-       getindex
+       Counterfactuals, Outcome, Covariates, ObsData,
+       getindex, Γ
 
 function label_treatments(W::Vector)
     treatment_levels = sort!([w for w in Set(W)])
@@ -14,14 +14,14 @@ function label_treatments(W::Vector)
     return Dict(label=>t for (label, t) in zip([true, false], treatment_levels))
 end
 
-type Counterfactuals
-    treated::Dict{Bool,Vector}
-    observed::Dict{Bool,Vector}
+type Counterfactuals{T<:Real}
+    treated::Dict{Bool,Vector{T}}
+    observed::Dict{Bool,Vector{T}}
     W::Vector{Bool}
 end
 
-function Counterfactuals(treated::Dict, W::Vector{Bool})
-    observed = Dict(c=>Vector{Union{Void, Real}}(length(W)) for c in [true, false])
+function Counterfactuals{T<:Real}(treated::Dict{Bool,Vector{T}}, W::Vector{Bool})
+    observed = Dict(c=>Vector{T}(length(W)) for c in [true, false])
     observed[true][W] = treated[true][W]
     observed[true][!W] = treated[false][!W]
     observed[false][W] = treated[false][W]
@@ -29,21 +29,22 @@ function Counterfactuals(treated::Dict, W::Vector{Bool})
     return Counterfactuals(treated, observed, W)
 end
 
-function Counterfactuals(observed_vec::Vector, W::Vector{Bool})
-    observed = Dict(true  => observed_vec, 
-                    false => Vector{Union{Void, Real}}([nothing for i in 1:length(W)]))
-    treated = Dict(c=>Vector{Union{Void, Real}}(length(W)) for c in [true, false])
-    treated[true][W] = observed[true][W]   
-    treated[false][!W] = observed[true][!W]  
-    treated[false][W] = observed[false][W]  
-    treated[true][!W] = observed[false][!W] 
-    return Counterfactuals(treated, observed, W)
+function getindex(F::Counterfactuals, index)
+    return Counterfactuals(Dict(true=>F.treated[true][index],
+                                false=>F.treated[false][index]),
+                           F.W[index])
 end
 
-function getindex(Y::Counterfactuals, index)
-    return Counterfactuals(Dict(true=>Y.treated[true][index],
-                                false=>Y.treated[false][index]),
-                           Y.W[index])
+function Γ(F::Counterfactuals; o::Union{Bool,Void}=nothing, t::Union{Bool,Void}=nothing)
+    if (o==nothing) & (t==nothing)
+        error("no conditions provided")
+    elseif o==nothing
+        return F.treated[t]
+    elseif t==nothing
+        return F.observed[o]
+    else
+        return t ? F.observed[o][F.W] : F.observed[o][!F.W]
+    end
 end
 
 function +(F::Counterfactuals, f::Counterfactuals)
@@ -52,10 +53,40 @@ function +(F::Counterfactuals, f::Counterfactuals)
     return Counterfactuals(treated, observed, F.W)
 end
 
-immutable ObsData
-    X::Matrix{Real}
+immutable Outcome{T<:Real}
+    Y::Vector{T}
     W::Vector{Bool}
-    Y::Counterfactuals
+end
+
+function getindex(Y::Outcome, index)
+    return Outcome(Y.Y[index], Y.W[index])
+end
+
+function Γ(Y::Outcome; t::Bool=true)
+    t ? Y.Y[Y.W] : Y.Y[!Y.W]
+end
+
+function -(Y::Outcome, F::Counterfactuals)
+    return Outcome(Y.Y - F.observed[true], Y.W)
+end
+
+immutable Covariates{T<:Real}
+    X::Matrix{T}
+    W::Vector{Bool}
+end
+
+function getindex(X::Covariates, index)
+    return Covariates(X.X[index,:], X.W[index])
+end
+
+function Γ(X::Covariates; t::Bool=true)
+    t ? X.X[X.W,:] : X.X[!X.W,:]
+end
+
+immutable ObsData
+    X::Covariates
+    W::Vector{Bool}
+    Y::Outcome
     trts::Dict{Bool,Any}
     N::Int
     N_treated::Dict{Bool,Int}
@@ -67,17 +98,12 @@ function ObsData(X::Matrix, W::Vector, Y::Vector; trts=nothing)
     for (t,w) in trts
         W_bool[W.==w] = t
     end
-    Y = Counterfactuals(Y, W_bool)
-    return ObsData(X, W_bool, Y, trts, length(W), Dict(true=>sum(W_bool), false=>sum(!W_bool)))
-end
-
-function ObsData(X::Matrix, W::Vector{Bool}, Y::Counterfactuals, trts::Dict{Bool,Any})
-    return ObsData(X, W, Y, trts, length(W), Dict(true=>sum(W), false=>sum(!W)))
+    return ObsData(Covariates(X,W_bool), W_bool, Outcome(Y, W_bool), trts, length(W), Dict(true=>sum(W_bool), false=>sum(!W_bool)))
 end
 
 function getindex(data::ObsData, index)
-    Y = Counterfactuals(data.Y.treated, data.W)
-    return ObsData(data.X[index,:], data.W[index], Y[index], data.trts)
+    return ObsData(data.X[index], data.W[index], data.Y[index], data.trts, 
+                   length(data.W), Dict(true=>sum(data.W), false=>sum(!data.W)))
 end
 
 end #module

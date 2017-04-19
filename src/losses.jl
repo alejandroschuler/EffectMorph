@@ -2,22 +2,23 @@ __precompile__()
 
 module Losses
 
+
 export Loss, Squared, Binomial,
-       evaluate, gradient, effect
+       evaluate, grad, effect
 
 
 logistic(x) = 1./(1+exp(-x))
 
 abstract Loss
 
-type Squared
+type Squared <: Loss
 end
 
 function evaluate{T<:Real}(loss::Squared, Y::Vector{T}, F::Vector{T})
     return (Y-F).^2
 end
 
-function gradient{T<:Real}(loss::Squared, Y::Vector{T}, F::Vector{T})
+function grad{T<:Real}(loss::Squared, Y::Vector{T}, F::Vector{T})
     return Y-F
 end
 
@@ -26,14 +27,14 @@ function effect{T<:Real}(loss::Squared, Ft::Vector{T}, Ff::Vector{T})
 end
 
 
-type Binomial
+type Binomial <: Loss
 end
 
 function evaluate{T<:Real}(loss::Binomial, Y::Vector{T}, F::Vector{T})
     return Y.*F - log(1+exp(F))
 end
 
-function gradient{T<:Real}(loss::Binomial, Y::Vector{T}, F::Vector{T})
+function grad{T<:Real}(loss::Binomial, Y::Vector{T}, F::Vector{T})
     return Y-logistic(F) 
 end
 

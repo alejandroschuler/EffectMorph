@@ -6,7 +6,7 @@ import Base: length, convert, promote_rule, show, start, next, done
 export Estimator, Leaf, Node, 
        depth,  
        fit_regression_tree, 
-       predict, leaf_assignment
+       predict, assign_leaves
 
 float(x) = map(Float64, x)
 neg(arr) = map(!, arr) # `.!arr` is invalid in 0.5, and `!arr` triggers a warning in 0.6.
@@ -168,33 +168,29 @@ function predict(estimator_dict::Dict, X::Matrix)
     return Dict(k=>predict(v,X) for (k,v) in estimator_dict)
 end
 
-leaf_assignment(leaf::Leaf, feature::Vector) = leaf.id
+assign_leaves(leaf::Leaf, feature::Vector) = leaf.id
 
-function leaf_assignment(tree::Node, X::Vector)
+function assign_leaves(tree::Node, X::Vector)
     if tree.featval == nothing
-        return leaf_assignment(tree.left, X)
+        return assign_leaves(tree.left, X)
     elseif X[tree.featid] < tree.featval
-        return leaf_assignment(tree.left, X)
+        return assign_leaves(tree.left, X)
     else
-        return leaf_assignment(tree.right, X)
+        return assign_leaves(tree.right, X)
     end
 end
 
-function leaf_assignment(tree::Union{Leaf,Node}, X::Matrix)
+function assign_leaves(tree::Union{Leaf,Node}, X::Matrix)
     N = size(X,1)
-    assignments = Array{Any}(N)
+    assignments = Array{Int}(N)
     for i in 1:N
-        assignments[i] = leaf_assignment(tree, X[i,:])
+        assignments[i] = assign_leaves(tree, X[i,:])
     end
-    if typeof(assignments[1]) <: Float64
-        return float(assignments)
-    else
-        return assignments
-    end
+    return assignments
 end
 
-function leaf_assignment(estimator_dict::Dict, X::Matrix)
-    return Dict(k=>leaf_assignment(v,X) for (k,v) in estimator_dict)
+function assign_leaves(estimator_dict::Dict, X::Matrix)
+    return Dict(k=>assign_leaves(v,X) for (k,v) in estimator_dict)
 end
 
 end #module
