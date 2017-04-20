@@ -99,8 +99,8 @@ function predict_counterfactuals(tree_pair, X, ν, ϵ)
     return Counterfactuals(Dict(t=>[ϵ*ν[t][li] for li in assign_leaves(tree_pair[t], X.X)] for t in TF), X.W)
 end
 
-function constrained_boost(data::ObsData, loss::Loss, τ::Float64, n_trees::Int; 
-                           max_depth=3, learning_rate=0.1, min_samples_leaf=1,
+function constrained_boost{T<:Real, T2<:Real, L<:Loss}(data::ObsData, loss::L, τ::T, n_trees::Int; 
+                           max_depth::Int=3, learning_rate::T2=0.1, min_samples_leaf::Int=1,
                            tr=:)
     data_tr = data[tr]
 
@@ -124,17 +124,17 @@ end
 
 import MLBase.Kfold
 
-function cross_validate(data::ObsData, loss::Loss, τ::Float64, n_trees::Int;
-                           max_depth=3, learning_rate=0.1, min_samples_leaf=1,
-                           nfolds=5)
+function cross_validate{T<:Real, T2<:Real, L<:Loss}(data::ObsData, loss::L, τ::T, n_trees::Int;
+                           max_depth::Int=3, learning_rate::T2=0.1, min_samples_leaf::Int=1,
+                           nfolds::Int=5)
     training_error, test_error = Vector{Vector{Float64}}(0), Vector{Vector{Float64}}(0)
     for tr in Kfold(data.N, nfolds)
         te = [i for i in 1:data.N if i ∉ tr]
-        F = constrained_boost(data::ObsData, loss::Loss, τ::Float64, n_trees::Int; 
+        F = constrained_boost(data, loss, τ, n_trees,
                            max_depth=max_depth, learning_rate=learning_rate, min_samples_leaf=min_samples_leaf,
                            tr=tr)
-        push!(training_error, [sum(evaluate(loss, data.Y.Y[tr], F[n].observed[true][tr])) for n in 1:n_trees+1])
-        push!(test_error, [sum(evaluate(loss, data.Y.Y[te], F[n].observed[true][te])) for n in 1:n_trees+1])
+        push!(training_error, [sum(evaluate(loss, data.Y.Y[tr], F[n].observed[true][tr]))/length(data.Y.Y[tr]) for n in 1:n_trees+1])
+        push!(test_error, [sum(evaluate(loss, data.Y.Y[te], F[n].observed[true][te]))/length(data.Y.Y[te]) for n in 1:n_trees+1])
     end
     return training_error, test_error
 end

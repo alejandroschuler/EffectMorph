@@ -8,6 +8,7 @@
 *.jpeg
 *.pyc
 *.toc
+*.pdf
 data/*
 old src/*
 notebooks/*
