@@ -1,6 +1,7 @@
 *.log
 *.aux
 *.png
+*.eps
 *.pptx
 *.RData
 *.ipynb
@@ -12,3 +13,4 @@
 data/*
 old src/*
 notebooks/*
+manuscript/figures/*

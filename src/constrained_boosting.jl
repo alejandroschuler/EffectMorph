@@ -32,7 +32,7 @@ function fit_const_pair(data::ObsData, loss::Squared, τ::Real)
 end
 
 function fit_const_pair(data::ObsData, loss::Binomial, τ::Float64)
-    m = Model(solver=IpoptSolver())
+    m = Model(solver=IpoptSolver(print_level=0))
     @variable(m, 0 <= πt <= 1)
     @variable(m, 0 <= πf <= 1)
     @constraint(m, πt-πf == τ)
@@ -59,9 +59,7 @@ function build_leaf_index(tree_pair::Dict{Bool,Node}, X::Covariates)
     return assignment_index
 end
 
-function step_search(loss::Squared, data::ObsData, F::Counterfactuals, tree_pair::Dict{Bool,Node}; tr=:)
-    idx = build_leaf_index(tree_pair, data.X)
-
+function step_search(loss::Squared, data::ObsData, F::Counterfactuals, idx::OrderedDict, τ=nothing; tr=:)
     squares, coefs, constraint_coefs = Vector{Int}(0), Vector{Float64}(0), Vector{Int}(0)
     for ((t,l), i) in idx
         idx_leaf = i∩tr
@@ -75,7 +73,7 @@ function step_search(loss::Squared, data::ObsData, F::Counterfactuals, tree_pair
     end
 
     L = length(coefs)
-    m = Model(solver=IpoptSolver())
+    m = Model(solver=IpoptSolver(print_level=0))
     @variable(m, ν[1:L])
     @constraint(m, sum(constraint_coefs[i]*ν[i] for i in 1:L) == 0)
     @objective(m, Min, sum(ν[i]^2*squares[i] - coefs[i]*ν[i] for i in 1:L))
@@ -91,8 +89,44 @@ function step_search(loss::Squared, data::ObsData, F::Counterfactuals, tree_pair
     return ν_dict
 end
 
-function step_search(loss::Binomial, data::ObsData, F::Counterfactuals, f::Counterfactuals, tree_pair; tr=:)
-    return nothing # TO DO
+function filter_index(index, include_subjects)
+    filtered_index = OrderedDict()
+    for (k,v) in index
+        v_in = v ∩ include_subjects
+        length(v_in)>0 ? filtered_index[k] = v_in : nothing
+    end
+    return filtered_index
+end
+
+function step_search(loss::Binomial, data::ObsData, F::Counterfactuals, idx::OrderedDict, τ; tr=:)
+    F1 = F.treated[true]
+    F0 = F.treated[false]
+    Y = data.Y.Y
+    W = data.W
+
+    idx1, idx0 = OrderedDict(), OrderedDict()
+    for ((t,l),i) in idx
+        t ? idx1[l] = i : idx0[l] = i 
+    end
+
+    idx1obs = filter_index(idx1, findin(W,1))
+    idx0obs = filter_index(idx0, findin(W,0))
+
+    m = Model(solver=IpoptNLSolver())
+    @variable(m, ν1[1:length(idx1)])
+    @variable(m, ν0[1:length(idx0)])
+    @NLconstraint(m, sum(sum((1+exp(-F1[j]-ν1[i]))^(-1) for j in idx1[i]) for i in keys(idx1)) - 
+                     sum(sum((1+exp(-F0[j]-ν0[i]))^(-1) for j in idx0[i]) for i in keys(idx0)) == 0)
+    @NLobjective(m, Max, 
+                    sum(sum(Y[j]*(F1[j]+ν1[i]) - log(1+exp(F1[j]+ν1[i]))for j in idx1obs[i]) 
+                        for i in keys(idx1obs)) + 
+                    sum(sum(Y[j]*(F0[j]+ν0[i]) - log(1+exp(F0[j]+ν0[i]))for j in idx0obs[i]) 
+                        for i in keys(idx0obs)))
+    status = solve(m)
+    νopt1 = getvalue(ν1)
+    νopt0 = getvalue(ν0)
+    return Dict(true => Dict(l=>νi for (l,νi) in zip(keys(idx1),νopt1)),
+                false => Dict(l=>νi for (l,νi) in zip(keys(idx0),νopt0)))
 end
 
 function predict_counterfactuals(tree_pair, X, ν, ϵ)
@@ -111,11 +145,11 @@ function constrained_boost{T<:Real, T2<:Real, L<:Loss}(data::ObsData, loss::L, �
     residuals = obs_gradient(loss, data.Y, F[end], idx=tr)
 
     for i in 1:n_trees
-        print(i)
         tree_pair = Dict(t=>fit_regression_tree(Γ(data.X[tr],t=t) , residuals[t], 
                                                         min_samples_leaf=min_samples_leaf, 
                                                         max_depth=max_depth) for t in TF);
-        ν = step_search(loss, data, F[end], tree_pair, tr=tr)
+        idx = build_leaf_index(tree_pair, data.X)
+        ν = step_search(loss, data, F[end], idx, tr=tr)
         push!(F, F[end]+predict_counterfactuals(tree_pair, data.X, ν, learning_rate)) 
         residuals = obs_gradient(loss, data.Y, F[end], idx=tr)
     end
