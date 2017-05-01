@@ -21,8 +21,7 @@ using .Losses
 using .ObsDataStructures
 
 using DataStructures
-using JuMP
-using Ipopt
+using JuMP, Ipopt#, AmplNLWriter
 
 const TF = [true, false]
 
@@ -31,7 +30,7 @@ function fit_const_pair(data::ObsData, loss::Squared, τ::Real)
     return Dict(t => Leaf(Ȳ +(2*t-1) * τ * data.N_treated[t]/data.N) for t in TF)
 end
 
-function fit_const_pair(data::ObsData, loss::Binomial, τ::Float64)
+function fit_const_pair(data::ObsData, loss::Binomial, τ::Real)
     m = Model(solver=IpoptSolver(print_level=0))
     @variable(m, 0 <= πt <= 1)
     @variable(m, 0 <= πf <= 1)
@@ -112,16 +111,14 @@ function step_search(loss::Binomial, data::ObsData, F::Counterfactuals, idx::Ord
     idx1obs = filter_index(idx1, findin(W,1))
     idx0obs = filter_index(idx0, findin(W,0))
 
-    m = Model(solver=IpoptNLSolver())
+    m = Model(solver=IpoptSolver(print_level=0))
     @variable(m, ν1[1:length(idx1)])
     @variable(m, ν0[1:length(idx0)])
-    @NLconstraint(m, sum(sum((1+exp(-F1[j]-ν1[i]))^(-1) for j in idx1[i]) for i in keys(idx1)) - 
-                     sum(sum((1+exp(-F0[j]-ν0[i]))^(-1) for j in idx0[i]) for i in keys(idx0)) == 0)
+    @NLconstraint(m, sum(sum((1+exp(-F1[j]-ν1[i]))^(-1) for j in idx1[l]) for (i,l) in enumerate(keys(idx1))) - 
+                     sum(sum((1+exp(-F0[j]-ν0[i]))^(-1) for j in idx0[l]) for (i,l) in enumerate(keys(idx0))) == 0)
     @NLobjective(m, Max, 
-                    sum(sum(Y[j]*(F1[j]+ν1[i]) - log(1+exp(F1[j]+ν1[i]))for j in idx1obs[i]) 
-                        for i in keys(idx1obs)) + 
-                    sum(sum(Y[j]*(F0[j]+ν0[i]) - log(1+exp(F0[j]+ν0[i]))for j in idx0obs[i]) 
-                        for i in keys(idx0obs)))
+                    sum(sum(Y[j]*(F1[j]+ν1[i]) - log(1+exp(F1[j]+ν1[i]))for j in idx1obs[l]) for (i,l) in enumerate(keys(idx1obs))) + 
+                    sum(sum(Y[j]*(F0[j]+ν0[i]) - log(1+exp(F0[j]+ν0[i]))for j in idx0obs[l]) for (i,l) in enumerate(keys(idx0obs))))
     status = solve(m)
     νopt1 = getvalue(ν1)
     νopt0 = getvalue(ν0)
@@ -149,20 +146,21 @@ function constrained_boost{T<:Real, T2<:Real, L<:Loss}(data::ObsData, loss::L, �
                                                         min_samples_leaf=min_samples_leaf, 
                                                         max_depth=max_depth) for t in TF);
         idx = build_leaf_index(tree_pair, data.X)
-        ν = step_search(loss, data, F[end], idx, tr=tr)
+        ν = step_search(loss, data, F[end], idx, τ, tr=tr)
         push!(F, F[end]+predict_counterfactuals(tree_pair, data.X, ν, learning_rate)) 
         residuals = obs_gradient(loss, data.Y, F[end], idx=tr)
     end
     return F
 end
 
-import MLBase.Kfold
+import MLBase.StratifiedKfold
 
 function cross_validate{T<:Real, T2<:Real, L<:Loss}(data::ObsData, loss::L, τ::T, n_trees::Int;
                            max_depth::Int=3, learning_rate::T2=0.1, min_samples_leaf::Int=1,
                            nfolds::Int=5)
     training_error, test_error = Vector{Vector{Float64}}(0), Vector{Vector{Float64}}(0)
-    for tr in Kfold(data.N, nfolds)
+    loss == Binomial() ? folds = StratifiedKfold(data.Y.Y + 2*data.W, nfolds) : folds = StratifiedKfold(data.W, nfolds)
+    for tr in folds
         te = [i for i in 1:data.N if i ∉ tr]
         F = constrained_boost(data, loss, τ, n_trees,
                            max_depth=max_depth, learning_rate=learning_rate, min_samples_leaf=min_samples_leaf,

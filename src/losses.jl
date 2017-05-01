@@ -13,11 +13,11 @@ abstract Loss
 type Squared <: Loss
 end
 
-function evaluate{T<:Real}(loss::Squared, Y::Vector{T}, F::Vector{T})
+function evaluate{T<:Real,U<:Real}(loss::Squared, Y::Vector{U}, F::Vector{T})
     return (Y-F).^2
 end
 
-function grad{T<:Real}(loss::Squared, Y::Vector{T}, F::Vector{T})
+function grad{T<:Real,U<:Real}(loss::Squared, Y::Vector{U}, F::Vector{T})
     return Y-F
 end
 
@@ -29,12 +29,12 @@ end
 type Binomial <: Loss
 end
 
-function evaluate{T<:Real}(loss::Binomial, Y::Vector{T}, F::Vector{T})
-    return Y.*F - log(1+exp(F))
+function evaluate{T<:Real}(loss::Binomial, Y::Vector, F::Vector{T})
+    return log(1+exp(F)) - Y.*F
 end
 
-function grad{T<:Real}(loss::Binomial, Y::Vector{T}, F::Vector{T})
-    return Y-logistic(F) 
+function grad{T<:Real}(loss::Binomial, Y::Vector, F::Vector{T})
+    return logistic(F) - Y
 end
 
 function effect{T<:Real}(loss::Binomial, Ft::Vector{T}, Ff::Vector{T})
