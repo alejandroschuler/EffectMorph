@@ -21,7 +21,7 @@ using .Losses
 using .ObsDataStructures
 
 using DataStructures
-using JuMP, Ipopt#, AmplNLWriter
+using JuMP, Ipopt
 
 const TF = [true, false]
 
