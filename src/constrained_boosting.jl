@@ -108,8 +108,8 @@ function step_search(loss::Binomial, data::ObsData, F::Counterfactuals, idx::Ord
         t ? idx1[l] = i : idx0[l] = i 
     end
 
-    idx1obs = filter_index(idx1, findin(W,1))
-    idx0obs = filter_index(idx0, findin(W,0))
+    idx1obs = filter_index(idx1, findin(W,1) ∩ tr)
+    idx0obs = filter_index(idx0, findin(W,0) ∩ tr)
 
     m = Model(solver=IpoptSolver(print_level=0))
     @variable(m, ν1[1:length(idx1)])
@@ -133,11 +133,9 @@ end
 function constrained_boost{T<:Real, T2<:Real, L<:Loss}(data::ObsData, loss::L, τ::T, n_trees::Int; 
                            max_depth::Int=3, learning_rate::T2=0.1, min_samples_leaf::Int=1,
                            tr=:)
-    data_tr = data[tr]
-
     F = Vector{Counterfactuals}(0)
 
-    const_pair = fit_const_pair(data_tr, loss, τ)
+    const_pair = fit_const_pair(data[tr], loss, τ)
     push!(F, predict_counterfactuals(const_pair, data)) 
     residuals = obs_gradient(loss, data.Y, F[end], idx=tr)
 
