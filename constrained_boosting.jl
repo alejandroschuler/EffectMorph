@@ -1,4 +1,8 @@
 # note that when using the binomial loss, the treatment effect must be between -1 and 1
+# TO DO: 
+# - Get rid of learning rate mechanic- prove that it works in the continuous case but moves us off the constraint surface with binary
+# - Initialize the step seach leaf values with those computed by the trees 
+# - Add in a regularizer to do the job of the learning rate
 
 __precompile__()
 
@@ -47,7 +51,7 @@ function predict_counterfactuals{T<:Estimators.Estimator}(estimator_pair::Dict{B
 end
 
 function obs_gradient{T<:Loss}(loss::T, Y::Outcome, F::Counterfactuals; idx=:)
-    return Dict(t => grad(loss, Γ(Y[idx],t=t), Γ(F[idx],o=true,t=t)) for t in TF)
+    return Dict(t => neg_grad(loss, Γ(Y[idx],t=t), Γ(F[idx],o=true,t=t)) for t in TF)
 end
 
 function build_leaf_index(tree_pair::Dict{Bool,Node}, X::Covariates)

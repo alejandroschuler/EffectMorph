@@ -3,7 +3,7 @@ __precompile__()
 module Losses
 
 export Loss, Squared, Binomial,
-       evaluate, grad, effect
+       evaluate, neg_grad, effect
 
 
 logistic(x) = 1./(1+exp(-x))
@@ -17,7 +17,7 @@ function evaluate{T<:Real,U<:Real}(loss::Squared, Y::Vector{U}, F::Vector{T})
     return (Y-F).^2
 end
 
-function grad{T<:Real,U<:Real}(loss::Squared, Y::Vector{U}, F::Vector{T})
+function neg_grad{T<:Real,U<:Real}(loss::Squared, Y::Vector{U}, F::Vector{T})
     return Y-F
 end
 
@@ -33,8 +33,8 @@ function evaluate{T<:Real}(loss::Binomial, Y::Vector, F::Vector{T})
     return log(1+exp(F)) - Y.*F
 end
 
-function grad{T<:Real}(loss::Binomial, Y::Vector, F::Vector{T})
-    return logistic(F) - Y
+function neg_grad{T<:Real}(loss::Binomial, Y::Vector, F::Vector{T})
+    return Y - logistic(F)
 end
 
 function effect{T<:Real}(loss::Binomial, Ft::Vector{T}, Ff::Vector{T})
