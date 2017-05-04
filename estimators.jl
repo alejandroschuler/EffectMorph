@@ -17,7 +17,7 @@ boolvec2int(v::Vector{Bool}) = sum(b*v for (b,v) in zip(2.^(0:(length(v)-1)), v)
 
 abstract Estimator
 
-immutable Leaf <: Estimator # MIGHT WANT TO NOT HAVE THIS BE IMMUTABLE SO VALUES CAN BE CHANGED (BY MULTIPLIER)
+immutable Leaf <: Estimator
     id::Integer
     value::Real
 end

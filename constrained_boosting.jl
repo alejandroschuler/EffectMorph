@@ -122,11 +122,11 @@ function step_search(loss::Binomial, data::ObsData, F::Counterfactuals, idx::Ord
     @variable(m, ν0[1:length(idx0)])
     @NLconstraint(m, sum(sum((1+exp(-F1[j]-ν1[i]))^(-1) for j in idx1[l]) for (i,l) in enumerate(keys(idx1))) - 
                      sum(sum((1+exp(-F0[j]-ν0[i]))^(-1) for j in idx0[l]) for (i,l) in enumerate(keys(idx0))) == data.N*τ)
-    @NLobjective(m, Max, 
-                    sum(sum(Y[j]*(F1[j]+ν1[i]) - log(1+exp(F1[j]+ν1[i])) for j in idx1obs[l]) for (i,l) in enumerate(keys(idx1obs))) + 
-                    sum(sum(Y[j]*(F0[j]+ν0[i]) - log(1+exp(F0[j]+ν0[i])) for j in idx0obs[l]) for (i,l) in enumerate(keys(idx0obs))))# + 
-                    # sum(sum(λ*ν1[i]^2 for j in idx1[l]) for (i,l) in enumerate(keys(idx1))) + 
-                    # sum(sum(λ*ν0[i]^2 for j in idx0[l]) for (i,l) in enumerate(keys(idx0))))
+    @NLobjective(m, Min, 
+                    sum(sum(log(1+exp(F1[j]+ν1[i])) - Y[j]*(F1[j]+ν1[i]) for j in idx1obs[l]) for (i,l) in enumerate(keys(idx1obs))) + 
+                    sum(sum(log(1+exp(F0[j]+ν0[i])) - Y[j]*(F0[j]+ν0[i]) for j in idx0obs[l]) for (i,l) in enumerate(keys(idx0obs))) + 
+                    sum(sum(λ*ν1[i]^2 for j in idx1[l]) for (i,l) in enumerate(keys(idx1))) + 
+                    sum(sum(λ*ν0[i]^2 for j in idx0[l]) for (i,l) in enumerate(keys(idx0))))
     status = solve(m)
     νopt1 = getvalue(ν1)
     νopt0 = getvalue(ν0)
